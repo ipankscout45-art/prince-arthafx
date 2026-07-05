@@ -1410,15 +1410,15 @@ function setupAuthListener() {
                 userDoc = await userRef.get();
             } else {
                 userProfileRole = userDoc.data().role || 'user';
-                
-                // Force check: If email matches ADMIN_EMAIL, force role to admin!
-                if (user.email === ADMIN_EMAIL && userProfileRole !== 'admin') {
-                    userProfileRole = 'admin';
-                    await userRef.set({ role: 'admin' }, { merge: true });
-                }
             }
             
-            const userData = userDoc.data();
+            // Strict Override: If email matches ADMIN_EMAIL, force role to admin instantly!
+            if (user.email === ADMIN_EMAIL) {
+                userProfileRole = 'admin';
+                userRef.set({ role: 'admin' }, { merge: true }).catch(e => console.error("Admin role update error:", e));
+            }
+            
+            const userData = userDoc.exists ? userDoc.data() : {};
             
             // Update sidebar info
             document.getElementById('user-display-name').innerText = userData.name || user.displayName || 'Trading User';
