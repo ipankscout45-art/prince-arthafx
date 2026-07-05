@@ -307,8 +307,8 @@ function resetWizard() {
 }
 
 async function saveTradingPlan() {
-    const capital = parseFloat(document.getElementById('plan-capital').value) || 0;
-    const pnlInput = parseFloat(document.getElementById('plan-pnl-calc').value) || 0;
+    const capital = parseFloat(document.getElementById('plan-capital').value.replace(/[^0-9.-]/g, '')) || 0;
+    const pnlInput = parseFloat(document.getElementById('plan-pnl-calc').value.replace(/[^0-9.-]/g, '')) || 0;
     const dateStr = document.getElementById('plan-date').value;
     const emotion = document.getElementById('plan-emotion').value;
     const notes = document.getElementById('plan-notes').value.trim();
@@ -568,8 +568,8 @@ function setupSettingsListeners() {
     // Initial Setup Capital form submission
     document.getElementById('config-capital-form').addEventListener('submit', async (e) => {
         e.preventDefault();
-        const initial = parseFloat(document.getElementById('settings-initial-capital').value);
-        const current = parseFloat(document.getElementById('settings-current-capital').value);
+        const initial = parseFloat(document.getElementById('settings-initial-capital').value.replace(/[^0-9.-]/g, ''));
+        const current = parseFloat(document.getElementById('settings-current-capital').value.replace(/[^0-9.-]/g, ''));
 
         if (isNaN(initial) || initial <= 0 || isNaN(current) || current <= 0) {
             alert('Masukkan nilai modal yang valid!');
