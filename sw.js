@@ -1,11 +1,11 @@
-const CACHE_NAME = 'prince-artha-v3';
+const CACHE_NAME = 'prince-artha-v4';
 const ASSETS = [
   './',
   './index.html',
   './style.css',
   './app.js',
   './manifest.json',
-  './assets/logo.jpg'
+  './logo.jpg'
 ];
 
 // Install Service Worker and cache resources
