@@ -1307,18 +1307,25 @@ window.editJournalRecord = editJournalRecord;
 // Firebase Authentication and Configuration Helpers
 function loadFirebaseConfig() {
     const configStr = localStorage.getItem('prince_artha_firebase_config');
-    if (!configStr) {
-        document.getElementById('firebase-config-modal').style.display = 'flex';
-        return null;
+    if (configStr) {
+        try {
+            return JSON.parse(configStr);
+        } catch (e) {
+            console.error('Invalid firebase config JSON:', e);
+            localStorage.removeItem('prince_artha_firebase_config');
+        }
     }
-    try {
-        return JSON.parse(configStr);
-    } catch (e) {
-        console.error('Invalid firebase config JSON:', e);
-        localStorage.removeItem('prince_artha_firebase_config');
-        document.getElementById('firebase-config-modal').style.display = 'flex';
-        return null;
-    }
+    
+    // Default Fallback: Hardcoded Firebase config for prince-arthafx so users don't see any setup modal!
+    return {
+        apiKey: "AIzaSyDFQdU9xEKdPnr1Fep102wq14iBwqkGSsU",
+        authDomain: "prince-arthafx.firebaseapp.com",
+        projectId: "prince-arthafx",
+        storageBucket: "prince-arthafx.firebasestorage.app",
+        messagingSenderId: "873427086558",
+        appId: "1:873427086558:web:fa76ee5360d14d4497664f",
+        measurementId: "G-MLXJETGF9K"
+    };
 }
 
 function initFirebase() {
