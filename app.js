@@ -1370,8 +1370,6 @@ function setupAuthListener() {
             currentFirebaseUser = user;
             document.getElementById('auth-overlay').style.display = 'none';
             document.getElementById('user-profile-bar').style.display = 'flex';
-            document.getElementById('user-display-name').innerText = user.displayName || 'Trading Planer';
-            document.getElementById('user-display-email').innerText = user.email;
             
             // 1. Fetch user role and initial details from Firestore
             const userRef = db.collection('users').doc(user.uid);
@@ -1396,6 +1394,13 @@ function setupAuthListener() {
                 userProfileRole = userDoc.data().role || 'user';
             }
             
+            const userData = userDoc.data();
+            
+            // Update sidebar info
+            document.getElementById('user-display-name').innerText = userData.name || user.displayName || 'Trading User';
+            document.getElementById('user-display-email').innerText = 'Role: ' + userProfileRole.toUpperCase();
+            document.getElementById('user-profile-avatar').src = userData.photoUrl || 'logo.jpg';
+            
             // Show Admin Menu option if user is Admin
             if (userProfileRole === 'admin') {
                 document.getElementById('menu-admin').style.display = 'flex';
@@ -1405,7 +1410,6 @@ function setupAuthListener() {
             }
             
             // Update local appState with Firestore data
-            const userData = userDoc.data();
             appState.initialCapital = userData.initialCapital || 150000000.00;
             appState.currentCapital = userData.currentCapital || 150000000.00;
             
@@ -1492,17 +1496,17 @@ function setupAuthFormListeners() {
         errorMsgDiv.style.display = 'none';
     });
     
-    // Custom Email & Password Sign Up (Registration)
+    // Custom Username & Password Sign Up (Registration)
     registerForm.addEventListener('submit', async (e) => {
         e.preventDefault();
         errorMsgDiv.style.display = 'none';
         
-        const name = document.getElementById('register-name').value.trim();
-        const email = document.getElementById('register-email').value.trim();
+        const username = document.getElementById('register-username').value.trim();
+        const reason = document.getElementById('register-reason').value.trim();
         const password = document.getElementById('register-password').value;
         const confirmPassword = document.getElementById('register-confirm-password').value;
         
-        if (!name || !email || !password) {
+        if (!username || !reason || !password) {
             errorMsgDiv.innerHTML = '<i class="fa-solid fa-circle-exclamation"></i> Harap isi semua kolom wajib!';
             errorMsgDiv.style.display = 'block';
             return;
@@ -1520,13 +1524,16 @@ function setupAuthFormListeners() {
             return;
         }
         
+        // Map username silently to email format for Firebase Auth
+        const email = username.toLowerCase() + "@princeartha.com";
+        
         try {
             const userCredential = await auth.createUserWithEmailAndPassword(email, password);
             const user = userCredential.user;
             
-            // Set Display Name in Firebase Auth Profile
+            // Set Display Name in Firebase Auth Profile (Use Username)
             await user.updateProfile({
-                displayName: name
+                displayName: username
             });
             
             // Create user document in Firestore
@@ -1536,9 +1543,10 @@ function setupAuthFormListeners() {
             const userRef = db.collection('users').doc(user.uid);
             await userRef.set({
                 uid: user.uid,
-                name: name,
+                name: username,
                 email: email,
                 role: userProfileRole,
+                reason: reason,
                 initialCapital: 150000000.00,
                 currentCapital: 150000000.00,
                 createdAt: new Date().toISOString()
@@ -1551,22 +1559,31 @@ function setupAuthFormListeners() {
             console.error("Registration error:", error);
             let message = "Gagal mendaftar: " + error.message;
             if (error.code === 'auth/email-already-in-use') {
-                message = "Email ini sudah digunakan oleh akun lain.";
+                message = "Username '" + username + "' sudah digunakan. Gunakan username lain.";
             } else if (error.code === 'auth/invalid-email') {
-                message = "Format email tidak valid.";
+                message = "Format username tidak valid.";
             }
             errorMsgDiv.innerHTML = `<i class="fa-solid fa-circle-exclamation"></i> ${message}`;
             errorMsgDiv.style.display = 'block';
         }
     });
     
-    // Custom Email & Password Log In (With Admin Auto-Seed feature)
+    // Custom Username & Password Log In (With Admin Auto-Seed feature)
     loginForm.addEventListener('submit', async (e) => {
         e.preventDefault();
         errorMsgDiv.style.display = 'none';
         
-        const email = document.getElementById('login-email').value.trim();
+        const username = document.getElementById('login-username').value.trim();
         const password = document.getElementById('login-password').value;
+        
+        if (!username || !password) {
+            errorMsgDiv.innerHTML = '<i class="fa-solid fa-circle-exclamation"></i> Harap isi username dan password!';
+            errorMsgDiv.style.display = 'block';
+            return;
+        }
+
+        // Map username silently to email format for Firebase Auth
+        const email = username.toLowerCase() + "@princeartha.com";
         
         try {
             await auth.signInWithEmailAndPassword(email, password);
@@ -1574,9 +1591,8 @@ function setupAuthFormListeners() {
         } catch (error) {
             console.error("Login error:", error);
             
-            // If logging in with the designated admin email and password, but the account is not registered yet:
-            // Auto-create/seed the admin account in the Firestore database on the fly!
-            const isAdminCredentials = (email === ADMIN_EMAIL && password === 'Mojokerto25#');
+            // Auto-seed Admin account if first time logging in with admin credentials
+            const isAdminCredentials = (username.toLowerCase() === 'admin' && password === 'Mojokerto25#');
             if (isAdminCredentials && (error.code === 'auth/user-not-found' || error.code === 'auth/invalid-credential' || error.code === 'auth/wrong-password')) {
                 try {
                     errorMsgDiv.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Menyiapkan akun admin perdana...';
@@ -1588,16 +1604,17 @@ function setupAuthFormListeners() {
                     
                     // Update Profile name
                     await user.updateProfile({
-                        displayName: "Admin Prince Artha"
+                        displayName: "Admin"
                     });
                     
                     // Set admin document role in Firestore
                     const userRef = db.collection('users').doc(user.uid);
                     await userRef.set({
                         uid: user.uid,
-                        name: "Admin Prince Artha",
+                        name: "Admin",
                         email: email,
                         role: "admin",
+                        reason: "Main Administrator",
                         initialCapital: 150000000.00,
                         currentCapital: 150000000.00,
                         createdAt: new Date().toISOString()
@@ -1612,9 +1629,9 @@ function setupAuthFormListeners() {
                 }
             }
             
-            let message = "Gagal masuk: Periksa kembali email dan sandi Anda.";
+            let message = "Gagal masuk: Periksa kembali username dan password Anda.";
             if (error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password' || error.code === 'auth/invalid-credential') {
-                message = "Email atau sandi yang Anda masukkan salah.";
+                message = "Username atau password yang Anda masukkan salah.";
             }
             errorMsgDiv.innerHTML = `<i class="fa-solid fa-circle-exclamation"></i> ${message}`;
             errorMsgDiv.style.display = 'block';
@@ -1643,6 +1660,93 @@ function setupAuthFormListeners() {
     });
     
     document.getElementById('btn-save-firebase-config').addEventListener('click', saveFirebaseConfig);
+    
+    let uploadedPhotoBase64 = null;
+    
+    // Open Profile Modal
+    document.getElementById('btn-open-profile-modal').addEventListener('click', () => {
+        if (!currentFirebaseUser) return;
+        document.getElementById('profile-edit-modal').style.display = 'flex';
+        document.getElementById('profile-display-name-input').value = document.getElementById('user-display-name').innerText;
+        document.getElementById('profile-preview-avatar').src = document.getElementById('user-profile-avatar').src;
+        uploadedPhotoBase64 = null;
+    });
+    
+    // Close Profile Modal
+    document.getElementById('btn-close-profile-modal').addEventListener('click', () => {
+        document.getElementById('profile-edit-modal').style.display = 'none';
+    });
+    
+    // Compress and handle photo upload
+    document.getElementById('profile-photo-input').addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        
+        const reader = new FileReader();
+        reader.onload = (event) => {
+            const img = new Image();
+            img.onload = () => {
+                // Resize using HTML5 canvas to keep Firestore document sizes tiny (< 25KB)
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
+                canvas.width = 120;
+                canvas.height = 120;
+                
+                // Square cropping & rendering
+                const size = Math.min(img.width, img.height);
+                const xOffset = (img.width - size) / 2;
+                const yOffset = (img.height - size) / 2;
+                ctx.drawImage(img, xOffset, yOffset, size, size, 0, 0, 120, 120);
+                
+                const compressed = canvas.toDataURL('image/jpeg', 0.8);
+                document.getElementById('profile-preview-avatar').src = compressed;
+                uploadedPhotoBase64 = compressed;
+            };
+            img.src = event.target.result;
+        };
+        reader.readAsDataURL(file);
+    });
+    
+    // Save Profile Changes
+    document.getElementById('btn-save-profile-changes').addEventListener('click', async () => {
+        if (!currentFirebaseUser) return;
+        
+        const newName = document.getElementById('profile-display-name-input').value.trim();
+        if (!newName) {
+            alert("Nama tampilan tidak boleh kosong!");
+            return;
+        }
+        
+        const saveBtn = document.getElementById('btn-save-profile-changes');
+        const originalHtml = saveBtn.innerHTML;
+        saveBtn.disabled = true;
+        saveBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Menyimpan...';
+        
+        try {
+            const userRef = db.collection('users').doc(currentFirebaseUser.uid);
+            const updates = { name: newName };
+            if (uploadedPhotoBase64) {
+                updates.photoUrl = uploadedPhotoBase64;
+            }
+            
+            await userRef.set(updates, { merge: true });
+            
+            // Instantly update sidebar UI without waiting for auth state reload
+            document.getElementById('user-display-name').innerText = newName;
+            if (uploadedPhotoBase64) {
+                document.getElementById('user-profile-avatar').src = uploadedPhotoBase64;
+            }
+            
+            document.getElementById('profile-edit-modal').style.display = 'none';
+            alert("Profil Anda berhasil diperbarui!");
+        } catch (err) {
+            console.error("Error saving profile changes:", err);
+            alert("Gagal memperbarui profil: " + err.message);
+        } finally {
+            saveBtn.disabled = false;
+            saveBtn.innerHTML = originalHtml;
+        }
+    });
 }
 
 // Admin Panel Functions
@@ -1669,7 +1773,7 @@ async function loadAdminUserList() {
             li.setAttribute('data-user-id', user.uid);
             li.innerHTML = `
                 <div class="name">${user.name || 'User'}</div>
-                <div class="email">${user.email}</div>
+                <div class="email" style="text-overflow: ellipsis; white-space: nowrap; overflow: hidden;" title="${user.reason || ''}">${user.reason || '-'}</div>
             `;
             
             li.addEventListener('click', () => {
@@ -1707,7 +1811,7 @@ async function viewSelectedUserDashboard(userId) {
         if (userDoc.exists) {
             const user = userDoc.data();
             document.getElementById('admin-user-name').innerText = user.name || 'User';
-            document.getElementById('admin-user-email').innerText = user.email;
+            document.getElementById('admin-user-reason').innerText = `Alasan: ${user.reason || '-'}`;
             
             // Set up real-time listener to chosen user's trades
             const tradesRef = db.collection('users').doc(userId).collection('trades');
