@@ -319,11 +319,6 @@ async function saveTradingPlan() {
         return;
     }
 
-    if (!currentFirebaseUser) {
-        alert('Sesi masuk telah kedaluwarsa, silakan masuk kembali!');
-        return;
-    }
-
     const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
     const dateObj = new Date(dateStr);
     const dayName = days[dateObj.getDay()];
@@ -331,57 +326,52 @@ async function saveTradingPlan() {
     // Compute signed PnL
     const actualPnl = inputOutcome === 'PROFIT' ? pnlInput : -pnlInput;
 
-    try {
-        const userTradesRef = db.collection('users').doc(currentFirebaseUser.uid).collection('trades');
-        
-        if (editId) {
-            // Edit Mode
-            const index = appState.trades.findIndex(t => t.id === editId);
-            if (index !== -1) {
-                const trade = appState.trades[index];
-                const docRef = userTradesRef.doc(trade.firebaseId);
-                
-                await docRef.set({
-                    date: dateStr,
-                    day: dayName,
-                    capitalAllocated: capital,
-                    actualPnl: actualPnl,
-                    actualPnlPercent: (actualPnl / capital) * 100,
-                    emotion: emotion,
-                    notes: notes
-                }, { merge: true });
-                
-                alert('Laporan harian berhasil diperbarui!');
-                cancelEditMode();
-            }
-        } else {
-            // Create new daily log entry
-            const log = {
-                id: 'log_' + Date.now(),
-                pair: 'XAUUSD',
+    if (editId) {
+        // Edit Mode
+        const index = appState.trades.findIndex(t => t.id === editId);
+        if (index !== -1) {
+            appState.trades[index] = {
+                ...appState.trades[index],
                 date: dateStr,
                 day: dayName,
                 capitalAllocated: capital,
                 actualPnl: actualPnl,
                 actualPnlPercent: (actualPnl / capital) * 100,
                 emotion: emotion,
-                notes: notes,
-                status: 'CLOSED'
+                notes: notes
             };
-
-            await userTradesRef.add(log);
-            alert('Laporan harian berhasil disimpan!');
-            resetWizard();
+            saveData();
+            recalculateBalance();
+            renderAll();
+            alert('Laporan harian berhasil diperbarui!');
+            cancelEditMode();
         }
-        
-        // Switch to Journal tab
-        const journalMenu = document.querySelector('.menu-item[data-tab="journal"]');
-        if (journalMenu) journalMenu.click();
-        
-    } catch (e) {
-        console.error("Error saving trading plan:", e);
-        alert("Gagal menyimpan data ke cloud database: " + e.message);
+    } else {
+        // Create new daily log entry
+        const log = {
+            id: 'log_' + Date.now(),
+            pair: 'XAUUSD',
+            date: dateStr,
+            day: dayName,
+            capitalAllocated: capital,
+            actualPnl: actualPnl,
+            actualPnlPercent: (actualPnl / capital) * 100,
+            emotion: emotion,
+            notes: notes,
+            status: 'CLOSED'
+        };
+
+        appState.trades.unshift(log);
+        saveData();
+        recalculateBalance();
+        renderAll();
+        alert('Laporan harian berhasil disimpan!');
+        resetWizard();
     }
+    
+    // Switch to Journal tab
+    const journalMenu = document.querySelector('.menu-item[data-tab="journal"]');
+    if (journalMenu) journalMenu.click();
 }
 
 // Edit Mode Initiator (Pulls data to form)
@@ -543,22 +533,14 @@ function renderJournal() {
 }
 
 async function deleteJournalRecord(id) {
-    if (!currentFirebaseUser) {
-        alert("Sesi masuk tidak aktif!");
-        return;
-    }
     if (confirm('Hapus laporan transaksi harian ini? Saldo modal Anda akan dikurangi/ditambah kembali secara otomatis.')) {
         const index = appState.trades.findIndex(t => t.id === id);
         if (index !== -1) {
-            try {
-                const trade = appState.trades[index];
-                const docRef = db.collection('users').doc(currentFirebaseUser.uid).collection('trades').doc(trade.firebaseId);
-                await docRef.delete();
-                alert("Laporan harian berhasil dihapus.");
-            } catch (e) {
-                console.error("Error deleting trade doc:", e);
-                alert("Gagal menghapus data dari cloud database: " + e.message);
-            }
+            appState.trades.splice(index, 1);
+            saveData();
+            recalculateBalance();
+            renderAll();
+            alert("Laporan harian berhasil dihapus.");
         }
     }
 }
@@ -1202,14 +1184,12 @@ async function loadMockDataEngine() {
             }
     ];
 
-    try {
-        const addPromises = mockTradesList.map(trade => tradesRef.add(trade));
-        await Promise.all(addPromises);
-        alert('Sukses memuat data demonstrasi 1 Bulan Compound Growth ke Database Cloud. Buka Dashboard!');
-    } catch (e) {
-        console.error("Error adding mock documents:", e);
-        alert("Gagal menambahkan berkas demonstrasi: " + e.message);
-    }
+    appState.trades = mockTradesList;
+    appState.initialCapital = 10000000.00;
+    saveData();
+    recalculateBalance();
+    renderAll();
+    alert('Sukses memuat data demonstrasi 1 Bulan Compound Growth! Buka Dashboard Anda.');
 }
 
 // Local Storage IO Helpers
@@ -1330,177 +1310,47 @@ function loadFirebaseConfig() {
 }
 
 async function initFirebase() {
-    const config = loadFirebaseConfig();
-    if (!config) return false;
+    isFirebaseConnected = false;
+    currentFirebaseUser = { uid: 'local_user' };
+    userProfileRole = 'user';
     
-    try {
-        // If an app is already initialized, delete it first to prevent already-exists errors
-        if (firebase.apps.length > 0) {
-            await firebase.app().delete();
-        }
-        firebaseApp = firebase.initializeApp(config);
-        auth = firebase.auth();
-        db = firebase.firestore();
-        isFirebaseConnected = true;
-        
-        // Hide config modal if it was open
-        document.getElementById('firebase-config-modal').style.display = 'none';
-        
-        // Listen to auth state changes
-        setupAuthListener();
-        return true;
-    } catch (e) {
-        console.error('Firebase initialization failed:', e);
-        alert('Gagal menghubungkan ke Firebase. Periksa kembali JSON Config Anda.');
-        localStorage.removeItem('prince_artha_firebase_config');
-        document.getElementById('firebase-config-modal').style.display = 'flex';
-        return false;
-    }
-}
-
-async function saveFirebaseConfig() {
-    let jsonStr = document.getElementById('firebase-config-json').value.trim();
-    if (!jsonStr) {
-        alert('Mohon masukkan JSON Config Firebase!');
-        return;
-    }
+    // Hide overlay & config modals
+    const fbModal = document.getElementById('firebase-config-modal');
+    if (fbModal) fbModal.style.display = 'none';
     
-    // Auto-extract everything inside { } if they pasted the full script code
-    if (jsonStr.includes('{') && jsonStr.includes('}')) {
-        const start = jsonStr.indexOf('{');
-        const end = jsonStr.lastIndexOf('}');
-        jsonStr = jsonStr.substring(start, end + 1);
-    }
+    const authOverlay = document.getElementById('auth-overlay');
+    if (authOverlay) authOverlay.style.display = 'none';
     
-    try {
-        // Clean up common JS object properties to make it valid strict JSON
-        let cleanedJson = jsonStr
-            .replace(/([{,]\s*)([a-zA-Z0-9_]+)\s*:/g, '$1"$2":') // Wrap keys in quotes
-            .replace(/'/g, '"') // Swap single quotes to double quotes
-            .replace(/,\s*([}\]])/g, '$1'); // Remove trailing commas
-            
-        const parsed = JSON.parse(cleanedJson);
-        if (!parsed.apiKey || !parsed.projectId) {
-            throw new Error('Konfigurasi tidak lengkap (apiKey atau projectId tidak ada).');
-        }
-        localStorage.setItem('prince_artha_firebase_config', JSON.stringify(parsed));
-        if (await initFirebase()) {
-            alert('Koneksi Firebase Berhasil Disimpan!');
-        }
-    } catch (e) {
-        alert('Format JSON tidak valid: ' + e.message + '\n\nPastikan Anda menempelkan kode Firebase Config dengan benar.');
-    }
+    const profileBar = document.getElementById('user-profile-bar');
+    if (profileBar) profileBar.style.display = 'flex';
+    
+    const adminMenu = document.getElementById('menu-admin');
+    if (adminMenu) adminMenu.style.display = 'none';
+    
+    // Load local storage data
+    loadData();
+    
+    // Set up user profile view details
+    const dispName = document.getElementById('user-display-name');
+    if (dispName) dispName.innerText = 'Trading Workspace';
+    
+    const dispEmail = document.getElementById('user-display-email');
+    if (dispEmail) dispEmail.innerText = 'Mode Lokal (Offline)';
+    
+    const avatar = document.getElementById('user-profile-avatar');
+    if (avatar) avatar.src = 'logo.jpg';
+    
+    recalculateBalance();
+    renderAll();
+    return true;
 }
 
 function setupAuthListener() {
-    if (!auth) return;
-    
-    auth.onAuthStateChanged(async (user) => {
-        if (user) {
-            currentFirebaseUser = user;
-            document.getElementById('auth-overlay').style.display = 'none';
-            document.getElementById('user-profile-bar').style.display = 'flex';
-            
-            // 1. Fetch user role and initial details from Firestore
-            const userRef = db.collection('users').doc(user.uid);
-            let userDoc = null;
-            
-            try {
-                userDoc = await userRef.get();
-                if (!userDoc.exists) {
-                    const isFirstAccount = (user.email === ADMIN_EMAIL);
-                    userProfileRole = isFirstAccount ? 'admin' : 'user';
-                    
-                    await userRef.set({
-                        uid: user.uid,
-                        name: user.displayName || 'Trading User',
-                        email: user.email,
-                        role: userProfileRole,
-                        initialCapital: 10000000.00,
-                        currentCapital: 10000000.00,
-                        createdAt: new Date().toISOString()
-                    });
-                    
-                    userDoc = await userRef.get();
-                } else {
-                    userProfileRole = userDoc.data().role || 'user';
-                }
-            } catch (dbErr) {
-                console.error("Firestore database read failed, using profile fallbacks:", dbErr);
-                userProfileRole = (user.email === ADMIN_EMAIL) ? 'admin' : 'user';
-            }
-            
-            // Strict Override: If email matches ADMIN_EMAIL, force role to admin instantly!
-            if (user.email === ADMIN_EMAIL) {
-                userProfileRole = 'admin';
-                userRef.set({ role: 'admin' }, { merge: true }).catch(e => console.error("Admin role update error:", e));
-            }
-            
-            const userData = (userDoc && userDoc.exists) ? userDoc.data() : {};
-            
-            // Update sidebar info
-            document.getElementById('user-display-name').innerText = userData.name || user.displayName || 'Trading User';
-            document.getElementById('user-display-email').innerText = 'Role: ' + userProfileRole.toUpperCase();
-            document.getElementById('user-profile-avatar').src = userData.photoUrl || 'logo.jpg';
-            
-            // Show Admin Menu option if user is Admin
-            if (userProfileRole === 'admin') {
-                document.getElementById('menu-admin').style.display = 'flex';
-                loadAdminUserList();
-            } else {
-                document.getElementById('menu-admin').style.display = 'none';
-            }
-            
-            // Update local appState with Firestore data
-            appState.initialCapital = userData.initialCapital || 10000000.00;
-            appState.currentCapital = userData.currentCapital || 10000000.00;
-            
-            // 2. Listen in real-time to User's Trades
-            subscribeToUserTrades(user.uid);
-            
-        } else {
-            currentFirebaseUser = null;
-            userProfileRole = 'user';
-            appState = {
-                initialCapital: 10000000.00,
-                currentCapital: 10000000.00,
-                trades: []
-            };
-            
-            if (unsubscribeUserTrades) unsubscribeUserTrades();
-            if (adminUnsubscribeSelectedUserTrades) adminUnsubscribeSelectedUserTrades();
-            
-            document.getElementById('auth-overlay').style.display = 'flex';
-            document.getElementById('user-profile-bar').style.display = 'none';
-            document.getElementById('menu-admin').style.display = 'none';
-            
-            switchTab('dashboard');
-            renderAll();
-        }
-    });
+    // Stubbed for local offline mode
 }
 
 function subscribeToUserTrades(userId) {
-    if (unsubscribeUserTrades) unsubscribeUserTrades();
-    
-    const tradesRef = db.collection('users').doc(userId).collection('trades');
-    
-    unsubscribeUserTrades = tradesRef.orderBy('date', 'desc').onSnapshot((snapshot) => {
-        const trades = [];
-        snapshot.forEach((doc) => {
-            const trade = doc.data();
-            trade.firebaseId = doc.id; // Save doc ID for editing/deletion
-            trades.push(trade);
-        });
-        
-        appState.trades = trades;
-        
-        // Recalculate current capital dynamically based on trades list to ensure consistency across devices
-        recalculateBalance();
-        renderAll();
-    }, (error) => {
-        console.error("Error subscribing to trades:", error);
-    });
+    // Stubbed for local offline mode
 }
 
 function recalculateBalance() {
@@ -1676,14 +1526,11 @@ function setupAuthFormListeners() {
         }
     });
     
-    // Log Out Button
-    document.getElementById('btn-logout').addEventListener('click', async () => {
-        if (confirm("Apakah Anda yakin ingin keluar dari akun?")) {
-            try {
-                await auth.signOut();
-            } catch (error) {
-                console.error("Logout error:", error);
-            }
+    // Log Out Button - repurposed to Reset Local Database in offline mode
+    document.getElementById('btn-logout').addEventListener('click', () => {
+        if (confirm("Reset seluruh data jurnal lokal Anda? Semua transaksi akan dihapus secara permanen.")) {
+            localStorage.clear();
+            location.reload();
         }
     });
     
