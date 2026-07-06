@@ -1314,17 +1314,10 @@ window.editJournalRecord = editJournalRecord;
 
 // Firebase Authentication and Configuration Helpers
 function loadFirebaseConfig() {
-    const configStr = localStorage.getItem('prince_artha_firebase_config');
-    if (configStr) {
-        try {
-            return JSON.parse(configStr);
-        } catch (e) {
-            console.error('Invalid firebase config JSON:', e);
-            localStorage.removeItem('prince_artha_firebase_config');
-        }
-    }
+    // Clear old/corrupted localStorage configurations to prevent any browser conflicts
+    localStorage.removeItem('prince_artha_firebase_config');
     
-    // Default Fallback: Hardcoded Firebase config for prince-arthafx so users don't see any setup modal!
+    // Always return the correct verified Firebase configuration
     return {
         apiKey: "AIzaSyDFQdU9xEKdPnr1Fepl02wql4iBwqkGSsU",
         authDomain: "prince-arthafx.firebaseapp.com",
